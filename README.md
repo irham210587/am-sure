@@ -269,8 +269,14 @@ framework preset terdeteksi otomatis; jangan diubah ke Next.js.
 Baris terakhir itu penting. Tautan Vercel bersifat publik, sedangkan kunci LLM-mu berbayar.
 Tanpa `APP_ACCESS_KEY`, siapa pun yang menemukan tautannya bisa memakai kuotamu.
 
-**4. Deploy.** `vercel.json` sudah menyetel region `sin1` (Singapura) dan `maxDuration` 60 detik,
-karena satu pertanyaan butuh waktu lebih dari batas bawaan.
+Sebagai alternatif, Vercel punya **Deployment Protection** bawaan di Settings. Bedanya, cara
+itu mewajibkan penonton punya akun Vercel dan login. Kunci akses lebih praktis kalau kamu
+hanya ingin membagikan tautan ke beberapa orang tanpa memaksa mereka mendaftar. Keduanya bisa
+dipakai bersamaan.
+
+**4. Deploy.** `vercel.json` sudah menyetel region `sin1` (Singapura) dan `maxDuration` 300
+detik, yaitu batas tertinggi paket Hobby. Angka itu ditulis eksplisit supaya tidak tertimpa
+pengaturan dashboard yang lebih rendah.
 
 **5. Uji.** Buka `https://nama-proyek.vercel.app`. Halaman akan meminta kunci akses; masukkan
 nilai `APP_ACCESS_KEY` yang tadi dibuat. Kunci tersimpan di browser, jadi hanya diminta sekali.

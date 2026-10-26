@@ -350,8 +350,12 @@ git push origin main
 npx vercel --prod
 ```
 
-Setelah build selesai, pastikan hasilnya di `/api/health`. Nilai `"stt_ready"` harus berubah
-dari `false` menjadi `true` setelah `STT_BASE_URL` dan `STT_API_KEY` terpasang di dashboard.
+Setelah build selesai, pastikan hasilnya di `/api/health`. Ada dua penanda yang berguna:
+
+- `"commit"` berisi tujuh huruf pertama commit yang sedang dipasang di produksi. Bandingkan
+  dengan `git rev-parse --short HEAD` di komputermu. Kalau sama, build terbaru sudah live.
+- `"stt_ready"` berubah dari `false` menjadi `true` setelah `STT_BASE_URL` dan `STT_API_KEY`
+  terpasang di dashboard.
 
 ### Deploy lewat terminal, tanpa GitHub
 

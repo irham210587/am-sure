@@ -266,6 +266,18 @@ framework preset terdeteksi otomatis; jangan diubah ke Next.js.
 | `TAVILY_API_KEY` | kunci Tavily |
 | `APP_ACCESS_KEY` | kalimat rahasia buatanmu sendiri |
 
+Tiga variabel berikut opsional, tapi tanpanya tombol Suara tidak berfungsi:
+
+| Nama | Nilai |
+|---|---|
+| `STT_BASE_URL` | `https://api.groq.com/openai/v1` |
+| `STT_API_KEY` | kunci dari penyedia speech to text |
+| `STT_MODEL` | `whisper-large-v3-turbo` |
+
+`VISION_MODEL` juga bisa ditambahkan kalau ingin mengganti model pembaca gambar; kalau
+dibiarkan kosong dipakai `deepseek-v4-flash-vision-exp`. Setelah menambah variabel apa pun,
+lakukan redeploy supaya nilainya terbaca.
+
 Baris terakhir itu penting. Tautan Vercel bersifat publik, sedangkan kunci LLM-mu berbayar.
 Tanpa `APP_ACCESS_KEY`, siapa pun yang menemukan tautannya bisa memakai kuotamu.
 

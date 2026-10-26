@@ -274,6 +274,20 @@ itu mewajibkan penonton punya akun Vercel dan login. Kunci akses lebih praktis k
 hanya ingin membagikan tautan ke beberapa orang tanpa memaksa mereka mendaftar. Keduanya bisa
 dipakai bersamaan.
 
+Kalau lebih suka terminal daripada dashboard, variabel yang sama bisa diisi lewat CLI. Membaca
+nilai dari berkas mencegahnya tercatat di riwayat shell:
+
+```bash
+npx vercel env add DEEPSEEK_API_KEY production < ./secret.txt
+npx vercel env add TAVILY_API_KEY production < ./secret.txt
+npx vercel env add APP_ACCESS_KEY production < ./secret.txt
+```
+
+Satu jebakan yang perlu dihindari: `npx vercel env pull <berkas>` **menimpa seluruh isi berkas
+yang ditunjuk**. Jangan arahkan ke `.env` milikmu, karena kunci Tokenomix dan Tavily yang sudah
+bekerja akan hilang. Kalau perlu menarik variabel dari Vercel, pakai nama lain seperti
+`.env.vercel`.
+
 **4. Deploy.** `vercel.json` sudah menyetel region `sin1` (Singapura) dan `maxDuration` 300
 detik, yaitu batas tertinggi paket Hobby. Angka itu ditulis eksplisit supaya tidak tertimpa
 pengaturan dashboard yang lebih rendah.
@@ -292,6 +306,29 @@ Balasan `{"ok":true,...,"access_required":true}` berarti konfigurasi terbaca. Pe
 
 Permintaan pertama setelah lama menganggur bisa terasa lambat karena function bangun dari nol.
 Itu normal di paket gratis.
+
+Untuk memastikan aset statis benar-benar dilayani CDN dan bukan dari function:
+
+```bash
+curl -sSI https://nama-proyek.vercel.app/style.css | grep -iE 'x-vercel-cache|cache-control'
+```
+
+`x-vercel-cache: HIT` berarti berkas itu datang dari CDN. Kalau hasilnya kosong atau `MISS`,
+halaman tetap berfungsi, hanya saja setiap permintaan aset ikut membangunkan function.
+
+### Deploy lewat terminal, tanpa GitHub
+
+Vercel CLI tidak perlu dipasang permanen; `npx` cukup:
+
+```bash
+npx vercel login
+npx vercel link
+npx vercel --prod
+```
+
+Perintah pertama membuka browser untuk masuk. `link` menghubungkan folder ini ke sebuah proyek,
+`--prod` menerbitkannya. Isi dulu environment variable lewat dashboard atau `npx vercel env add`,
+karena deploy tanpa kunci akan tetap berjalan tetapi setiap pertanyaan gagal.
 
 ## Troubleshooting
 

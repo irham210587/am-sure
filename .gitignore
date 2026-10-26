@@ -6,4 +6,5 @@ __pycache__/
 .DS_Store
 frontend/.vite/
 .claude/
+.vercel/
 *.log

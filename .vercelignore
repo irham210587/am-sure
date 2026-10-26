@@ -1,0 +1,14 @@
+.venv
+.env
+.env.*
+__pycache__
+*.pyc
+.pytest_cache
+.git
+.DS_Store
+frontend/.vite
+*.log
+tests
+check_provider.py
+Dockerfile
+.dockerignore

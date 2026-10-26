@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Am Sure — pencarian langsung</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..500&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body data-busy="false">
+  <div class="signal" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-name">Am Sure</span>
+      <span class="brand-tag">pencarian langsung</span>
+    </div>
+    <div class="topbar-actions">
+      <span class="status" id="status" data-state="idle" role="status">siap</span>
+      <button class="ghost" id="clear" type="button">Hapus riwayat</button>
+    </div>
+  </header>
+
+  <main class="thread" id="thread" aria-label="Percakapan">
+    <section class="intro" id="intro">
+      <p class="intro-line">
+        Tanyakan apa saja. Bot menelusuri web saat kamu bertanya, lalu menjawab dengan paragraf
+        yang mengalir. Langkah pencariannya tidak ditampilkan.
+      </p>
+      <ul class="intro-examples">
+        <li><button type="button" class="example">berapa harga bitcoin sekarang</button></li>
+        <li><button type="button" class="example">gempa terbaru di Indonesia hari ini</button></li>
+        <li><button type="button" class="example">jadwal motogp seri berikutnya</button></li>
+      </ul>
+    </section>
+
+    <section class="gate" id="gate" hidden>
+      <p class="gate-line">
+        Halaman ini dilindungi. Masukkan kunci akses yang diberikan pemilik bot.
+      </p>
+      <form class="gate-form" id="gate-form">
+        <input type="password" id="gate-input" placeholder="kunci akses"
+          autocomplete="off" spellcheck="false" />
+        <button type="submit">Buka</button>
+      </form>
+    </section>
+  </main>
+
+  <form class="composer" id="composer" autocomplete="off">
+    <label class="sr-only" for="input">Pertanyaan</label>
+    <textarea id="input" name="message" rows="1" maxlength="4000"
+      placeholder="Tulis pertanyaan…" spellcheck="false"></textarea>
+    <div class="composer-foot">
+      <label class="recency">
+        <input type="checkbox" id="recent" />
+        <span>hanya 7 hari terakhir</span>
+      </label>
+      <button class="send" id="send" type="submit">Cari</button>
+    </div>
+  </form>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

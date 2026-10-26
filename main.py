@@ -83,6 +83,7 @@ async def health() -> dict:
         "access_required": bool(ACCESS_KEY),
         "vision_ready": deepseek,
         "stt_ready": brain.stt_ready(),
+        "commit": (os.environ.get("VERCEL_GIT_COMMIT_SHA") or "")[:7],
     }
 
 

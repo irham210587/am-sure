@@ -6,6 +6,8 @@ ini, aplikasi terlihat sehat padahal setiap pertanyaan akan gagal 401.
 
 from __future__ import annotations
 
+import asyncio
+
 import main
 
 
@@ -24,3 +26,15 @@ def test_nilai_contoh_ditolak():
 def test_kunci_terisi_diterima():
     assert main.is_real_key("sk-tkx-abc123def456") is True
     assert main.is_real_key("tvly-dev-32SW6B-moT4") is True
+
+
+def test_health_menyertakan_commit_yang_terpasang(monkeypatch):
+    monkeypatch.setenv("VERCEL_GIT_COMMIT_SHA", "dac8a2a1234567890abcdef")
+
+    assert asyncio.run(main.health())["commit"] == "dac8a2a"
+
+
+def test_health_commit_kosong_di_luar_vercel(monkeypatch):
+    monkeypatch.delenv("VERCEL_GIT_COMMIT_SHA", raising=False)
+
+    assert asyncio.run(main.health())["commit"] == ""

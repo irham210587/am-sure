@@ -25,7 +25,7 @@ def test_nilai_contoh_ditolak():
 
 def test_kunci_terisi_diterima():
     assert main.is_real_key("sk-tkx-abc123def456") is True
-    assert main.is_real_key("tvly-dev-32SW6B-moT4") is True
+    assert main.is_real_key("tvly-uji-abcdef123456") is True
 
 
 def test_health_menyertakan_commit_yang_terpasang(monkeypatch):

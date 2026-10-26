@@ -7,6 +7,7 @@ jadi proses ini sepenuhnya tanpa status.
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import re
 from collections.abc import AsyncIterator
@@ -15,6 +16,7 @@ from datetime import date
 from functools import lru_cache
 from typing import Optional
 
+import httpx
 from openai import AsyncOpenAI
 from tavily import AsyncTavilyClient
 
@@ -60,6 +62,13 @@ def searcher() -> AsyncTavilyClient:
 
 def model_name() -> str:
     return os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+
+
+VISION_MODEL_DEFAULT = "deepseek-v4-flash-vision-exp"
+
+
+def vision_model_name() -> str:
+    return os.environ.get("VISION_MODEL", VISION_MODEL_DEFAULT)
 
 
 # --------------------------------------------------------------------------
@@ -233,8 +242,112 @@ def _search_error_message(exc: Exception) -> str:
 
 
 # --------------------------------------------------------------------------
-# Jaringan
+# Unggahan: gambar dan audio
 # --------------------------------------------------------------------------
+
+MAX_UPLOAD_BYTES = 3 * 1024 * 1024
+ALLOWED_IMAGE = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+ALLOWED_AUDIO = {
+    "audio/webm",
+    "audio/ogg",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mp4",
+    "audio/m4a",
+    "audio/x-m4a",
+}
+
+
+def check_upload(mime: str, size: int, allowed: set) -> str:
+    """Kembalikan pesan kesalahan, atau string kosong kalau berkas lolos."""
+    mime = (mime or "").split(";")[0].strip().lower()
+    if not mime:
+        return "Jenis berkas tidak dikenal."
+    if mime not in allowed:
+        return f"Jenis berkas tidak didukung: {mime}"
+    if size <= 0:
+        return "Berkas kosong."
+    if size > MAX_UPLOAD_BYTES:
+        batas = MAX_UPLOAD_BYTES / (1024 * 1024)
+        return f"Berkas {size / (1024 * 1024):.1f} MB, melebihi batas {batas:.0f} MB."
+    return ""
+
+
+def decode_upload(data_b64: str) -> bytes:
+    """Urai base64 dari klien. Melempar ValueError kalau tidak sah."""
+    cleaned = "".join((data_b64 or "").split())
+    if "," in cleaned and cleaned.startswith("data:"):
+        cleaned = cleaned.split(",", 1)[1]
+    return base64.b64decode(cleaned, validate=True)
+
+
+VISION_PROMPT = """Kamu melihat satu gambar yang dikirim pengguna.
+
+Tulis satu kalimat pendek dalam Bahasa Indonesia yang bisa dipakai sebagai kata kunci pencarian untuk mencari informasi tentang gambar ini.
+
+Sebutkan objek utama, merek atau tulisan yang terbaca, dan konteksnya kalau jelas terlihat. Jangan mengarang yang tidak tampak. Jangan menulis alamat situs atau nama domain. Balas hanya kalimat itu, tanpa pembuka."""
+
+
+async def describe_image(mime: str, data_b64: str) -> str:
+    """Ubah gambar jadi satu kalimat pencarian."""
+    resp = await llm().chat.completions.create(
+        model=vision_model_name(),
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": VISION_PROMPT},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{data_b64}"},
+                    },
+                ],
+            }
+        ],
+        temperature=0.2,
+        max_tokens=200,
+    )
+    return sanitize_answer((resp.choices[0].message.content or "").strip())
+
+
+STT_MODEL_DEFAULT = "whisper-large-v3-turbo"
+STT_TIMEOUT_SECONDS = 60
+
+
+def stt_ready() -> bool:
+    return bool(
+        os.environ.get("STT_BASE_URL", "").strip()
+        and os.environ.get("STT_API_KEY", "").strip()
+    )
+
+
+async def transcribe_audio(data: bytes, filename: str, mime: str) -> str:
+    """Kirim audio ke layanan transkripsi OpenAI-compatible dan ambil teksnya."""
+    base = os.environ.get("STT_BASE_URL", "").strip().rstrip("/")
+    key = os.environ.get("STT_API_KEY", "").strip()
+    model = os.environ.get("STT_MODEL", STT_MODEL_DEFAULT)
+
+    if not base or not key:
+        raise RuntimeError(
+            "Speech to text belum dikonfigurasi. Isi STT_BASE_URL dan STT_API_KEY di .env"
+        )
+
+    async with httpx.AsyncClient(timeout=STT_TIMEOUT_SECONDS) as client:
+        resp = await client.post(
+            f"{base}/audio/transcriptions",
+            headers={"Authorization": f"Bearer {key}"},
+            files={"file": (filename or "audio.webm", data, mime)},
+            data={"model": model, "language": "id"},
+        )
+
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Layanan STT menolak: {resp.status_code} {resp.text[:160]}")
+
+    payload = resp.json()
+    return (payload.get("text") or "").strip()
+
 
 REWRITE_SYSTEM = """Ubah pertanyaan terakhir pengguna menjadi satu query pencarian web yang berdiri sendiri dan spesifik.
 

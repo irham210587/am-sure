@@ -404,6 +404,34 @@ mengubah `DEEPSEEK_BASE_URL` dan `DEEPSEEK_MODEL` di `.env`.
 
 ---
 
+## Unggah gambar dan suara
+
+Dua tombol di atas kolom tulis mempercepat pencarian tanpa mengetik. Keduanya hanya mengisi
+kolom tulis dengan teks yang masih bisa kamu sunting sebelum dikirim.
+
+**Gambar.** Pilih berkas, lalu model vision menuliskan satu kalimat deskripsi yang siap dipakai
+sebagai kata kunci pencarian. Gambar diperkecil di browser lebih dulu, jadi foto besar pun tetap
+muat di bawah batas badan permintaan Vercel. Model bawaannya `deepseek-v4-flash-vision-exp` dari
+gateway yang sama dengan model teks, dan bisa diganti lewat `VISION_MODEL`.
+
+**Suara.** Pilih berkas audio, lalu isinya diubah menjadi teks. Gateway yang dipakai sekarang
+tidak melayani audio, jadi bagian ini butuh penyedia lain yang formatnya kompatibel dengan
+OpenAI. Isi tiga variabel di `.env` atau di dashboard Vercel:
+
+```env
+STT_BASE_URL=https://api.groq.com/openai/v1
+STT_API_KEY=gsk-kunci-dari-groq
+STT_MODEL=whisper-large-v3-turbo
+```
+
+Groq punya paket gratis. Selama penyedianya memakai bentuk `/audio/transcriptions` yang sama,
+cukup ganti `STT_BASE_URL` dan `STT_MODEL`. Kalau kedua variabel itu kosong, tombol Suara
+menampilkan pesan bahwa fiturnya belum dikonfigurasi, bukan gagal diam-diam.
+
+Batas berkas 3 MB untuk gambar maupun audio, kira-kira satu sampai dua menit rekaman. Angka itu
+dipilih karena Vercel menolak badan permintaan di atas 4,5 MB, dan base64 membengkak sekitar
+sepertiga.
+
 ## Catatan biaya
 
 Tavily gratis 1.000 pencarian per bulan. DeepSeek berbayar per token, dan untuk satu

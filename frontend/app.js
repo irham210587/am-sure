@@ -20,12 +20,18 @@ const els = {
   gate: document.getElementById("gate"),
   gateForm: document.getElementById("gate-form"),
   gateInput: document.getElementById("gate-input"),
+  pickImage: document.getElementById("pick-image"),
+  pickAudio: document.getElementById("pick-audio"),
+  fileImage: document.getElementById("file-image"),
+  fileAudio: document.getElementById("file-audio"),
+  attachNote: document.getElementById("attach-note"),
 };
 
 let turns = loadTurns();
 let accessKey = loadAccessKey();
 let busy = false;
 let gateOpen = false;
+let sttReady = false;
 
 /* ---------------- penyimpanan ---------------- */
 
@@ -89,16 +95,23 @@ function setStatus(text, state) {
   els.status.dataset.state = state;
 }
 
+function syncComposer() {
+  const blocked = busy || gateOpen;
+  els.send.disabled = blocked;
+  els.pickImage.disabled = blocked;
+  els.pickAudio.disabled = blocked;
+}
+
 function setBusy(value) {
   busy = value;
   document.body.dataset.busy = value ? "true" : "false";
-  els.send.disabled = value || gateOpen;
+  syncComposer();
 }
 
 function showGate(message) {
   gateOpen = true;
   els.gate.hidden = false;
-  els.send.disabled = true;
+  syncComposer();
   if (message) toast(message);
   els.gateInput.focus();
 }
@@ -106,8 +119,168 @@ function showGate(message) {
 function hideGate() {
   gateOpen = false;
   els.gate.hidden = true;
-  els.send.disabled = busy;
+  syncComposer();
   els.input.focus();
+}
+
+/* ---------------- unggahan: gambar dan audio ---------------- */
+
+const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
+const IMAGE_MAX_EDGE = 1280;
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Berkas gagal dibaca."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function dataUrlParts(dataUrl) {
+  const comma = dataUrl.indexOf(",");
+  if (comma === -1) throw new Error("Berkas tidak terbaca.");
+
+  const head = dataUrl.slice(0, comma);
+  const mime = (head.match(/^data:([^;]+)/) || [])[1] || "application/octet-stream";
+  return { mime, base64: dataUrl.slice(comma + 1) };
+}
+
+function base64Bytes(base64) {
+  const padding = (base64.match(/=*$/) || [""])[0].length;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
+async function downscaleImage(file) {
+  const raw = await readFileAsDataURL(file);
+  const parts = dataUrlParts(raw);
+
+  if (file.type !== "image/gif" && base64Bytes(parts.base64) <= MAX_UPLOAD_BYTES) {
+    return parts;
+  }
+
+  const image = await new Promise((resolve, reject) => {
+    const node = new Image();
+    node.onload = () => resolve(node);
+    node.onerror = () => reject(new Error("Gambar tidak bisa dibaca."));
+    node.src = raw;
+  });
+
+  const scale = Math.min(1, IMAGE_MAX_EDGE / Math.max(image.width, image.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  let quality = 0.85;
+  let out = dataUrlParts(canvas.toDataURL("image/jpeg", quality));
+  while (base64Bytes(out.base64) > MAX_UPLOAD_BYTES && quality > 0.4) {
+    quality -= 0.15;
+    out = dataUrlParts(canvas.toDataURL("image/jpeg", quality));
+  }
+  return out;
+}
+
+async function postUpload(path, payload) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: requestHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  if (res.status === 401) {
+    const err = new Error("Kunci akses ditolak.");
+    err.status = 401;
+    throw err;
+  }
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok) {
+    throw new Error(
+      (data && (data.detail || data.message)) || "Server membalas " + res.status
+    );
+  }
+  return (data && data.text) || "";
+}
+
+function lockOut() {
+  accessKey = "";
+  saveAccessKey("");
+  showGate("Kunci akses ditolak. Coba masukkan lagi.");
+  setStatus("terkunci", "error");
+}
+
+function insertIntoComposer(text) {
+  const value = String(text || "").trim();
+  if (!value) return;
+
+  const existing = els.input.value.trim();
+  els.input.value = existing ? existing + " " + value : value;
+  autoGrow();
+  els.input.focus();
+}
+
+async function withUpload(label, task) {
+  setBusy(true);
+  setStatus(label, "searching");
+  els.attachNote.textContent = label + "…";
+
+  try {
+    insertIntoComposer(await task());
+    setStatus("siap", "idle");
+  } catch (err) {
+    if (err && err.status === 401) {
+      lockOut();
+      return;
+    }
+    toast(err.message || "Berkas gagal diproses.");
+    setStatus("gagal", "error");
+  } finally {
+    els.attachNote.textContent = "";
+    setBusy(false);
+  }
+}
+
+async function handleImageFile(file) {
+  if (!file) return;
+
+  await withUpload("membaca gambar", async () => {
+    const parts = await downscaleImage(file);
+    return postUpload("/api/vision", {
+      mime: parts.mime,
+      data: parts.base64,
+      filename: file.name || "",
+    });
+  });
+}
+
+async function handleAudioFile(file) {
+  if (!file) return;
+
+  if (!sttReady) {
+    toast("Speech to text belum dikonfigurasi di server. Isi STT_BASE_URL dan STT_API_KEY.");
+    return;
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    toast("Berkas audio lebih dari 3 MB. Potong dulu atau rekam lebih singkat.");
+    return;
+  }
+
+  await withUpload("menyalin suara", async () => {
+    const raw = await readFileAsDataURL(file);
+    const parts = dataUrlParts(raw);
+    return postUpload("/api/transcribe", {
+      mime: file.type || parts.mime,
+      data: parts.base64,
+      filename: file.name || "",
+    });
+  });
 }
 
 let toastTimer;
@@ -316,6 +489,8 @@ async function checkHealth() {
       setStatus("tanpa kunci", "error");
     }
 
+    sttReady = data.stt_ready === true;
+
     if (data.access_required && !accessKey) {
       showGate();
     }
@@ -374,6 +549,21 @@ els.gateForm.addEventListener("submit", (event) => {
   hideGate();
   setStatus("siap", "idle");
   toast("Kunci akses tersimpan di browser ini.");
+});
+
+els.pickImage.addEventListener("click", () => els.fileImage.click());
+els.pickAudio.addEventListener("click", () => els.fileAudio.click());
+
+els.fileImage.addEventListener("change", (event) => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = "";
+  handleImageFile(file);
+});
+
+els.fileAudio.addEventListener("change", (event) => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = "";
+  handleAudioFile(file);
 });
 
 renderAll();

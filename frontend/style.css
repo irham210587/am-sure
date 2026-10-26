@@ -340,6 +340,44 @@ body[data-busy="true"] .signal {
 
 /* ---------- kolom tulis ---------- */
 
+.attach {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--slate);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.chip:hover:not(:disabled) {
+  color: var(--bone);
+  border-color: var(--slate);
+}
+
+.chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.attach-note {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--amber);
+}
+
+.attach-note:empty { display: none; }
+
 .composer {
   position: sticky;
   bottom: 0;

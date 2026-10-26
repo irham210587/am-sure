@@ -81,6 +81,8 @@ async def health() -> dict:
         "tavily_key": tavily,
         "model": brain.model_name(),
         "access_required": bool(ACCESS_KEY),
+        "vision_ready": deepseek,
+        "stt_ready": brain.stt_ready(),
     }
 
 
@@ -104,6 +106,46 @@ async def chat(body: ChatRequest) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+class UploadRequest(BaseModel):
+    mime: str = Field(min_length=3, max_length=64)
+    data: str = Field(min_length=1)
+    filename: str = ""
+
+
+def _decode(body: UploadRequest) -> bytes:
+    try:
+        return brain.decode_upload(body.data)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Isi berkas bukan base64 yang sah.")
+
+
+@app.post("/api/vision", dependencies=[Depends(require_access)])
+async def vision(body: UploadRequest) -> dict:
+    raw = _decode(body)
+    problem = brain.check_upload(body.mime, len(raw), brain.ALLOWED_IMAGE)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    try:
+        text = await brain.describe_image(body.mime.split(";")[0].strip().lower(), body.data.strip())
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=brain._short(exc))
+    return {"text": text}
+
+
+@app.post("/api/transcribe", dependencies=[Depends(require_access)])
+async def transcribe(body: UploadRequest) -> dict:
+    raw = _decode(body)
+    mime = body.mime.split(";")[0].strip().lower()
+    problem = brain.check_upload(mime, len(raw), brain.ALLOWED_AUDIO)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    try:
+        text = await brain.transcribe_audio(raw, body.filename, mime)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=brain._short(exc))
+    return {"text": text}
 
 
 @app.get("/", include_in_schema=False)

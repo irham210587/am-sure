@@ -378,6 +378,30 @@ body[data-busy="true"] .signal {
 
 .attach-note:empty { display: none; }
 
+.chip[aria-pressed="true"] {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+.level {
+  display: inline-block;
+  width: 4.5rem;
+  height: 0.35rem;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.level[hidden] { display: none; }
+
+.level i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--amber);
+  transition: width 0.08s linear;
+}
+
 .composer {
   position: sticky;
   bottom: 0;

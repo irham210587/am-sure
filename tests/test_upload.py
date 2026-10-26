@@ -39,6 +39,14 @@ def test_check_upload_audio_menerima_webm():
     assert brain.check_upload("audio/webm", 2048, brain.ALLOWED_AUDIO) == ""
 
 
+def test_check_upload_menerima_webm_dengan_codec_dari_browser():
+    assert brain.check_upload("audio/webm;codecs=opus", 2048, brain.ALLOWED_AUDIO) == ""
+
+
+def test_check_upload_menerima_mp4_yang_dipakai_safari():
+    assert brain.check_upload("audio/mp4", 2048, brain.ALLOWED_AUDIO) == ""
+
+
 def test_decode_upload_menerima_base64_biasa():
     assert brain.decode_upload("aGVsbG8=") == b"hello"
 

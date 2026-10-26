@@ -22,8 +22,10 @@ const els = {
   gateInput: document.getElementById("gate-input"),
   pickImage: document.getElementById("pick-image"),
   pickAudio: document.getElementById("pick-audio"),
+  pickLive: document.getElementById("pick-live"),
   fileImage: document.getElementById("file-image"),
   fileAudio: document.getElementById("file-audio"),
+  level: document.getElementById("level"),
   attachNote: document.getElementById("attach-note"),
 };
 
@@ -31,6 +33,7 @@ let turns = loadTurns();
 let accessKey = loadAccessKey();
 let busy = false;
 let gateOpen = false;
+let recording = false;
 let sttReady = false;
 
 /* ---------------- penyimpanan ---------------- */
@@ -97,9 +100,10 @@ function setStatus(text, state) {
 
 function syncComposer() {
   const blocked = busy || gateOpen;
-  els.send.disabled = blocked;
-  els.pickImage.disabled = blocked;
-  els.pickAudio.disabled = blocked;
+  els.send.disabled = blocked || recording;
+  els.pickImage.disabled = blocked || recording;
+  els.pickAudio.disabled = blocked || recording;
+  els.pickLive.disabled = blocked;
 }
 
 function setBusy(value) {
@@ -281,6 +285,229 @@ async function handleAudioFile(file) {
       filename: file.name || "",
     });
   });
+}
+
+/* ---------------- pencarian suara langsung ---------------- */
+
+const LIVE_MAX_MS = 60000;
+const LIVE_SILENCE_MS = 1600;
+const LIVE_RMS_THRESHOLD = 0.02;
+const LIVE_MIN_BYTES = 2000;
+
+let live = null;
+
+function pickRecorderMime() {
+  const pilihan = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+  if (!window.MediaRecorder) return "";
+  for (const type of pilihan) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return "";
+}
+
+async function startLive() {
+  if (!sttReady) {
+    toast("Speech to text belum dikonfigurasi di server. Isi STT_BASE_URL dan STT_API_KEY.");
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    toast("Browser ini tidak mendukung perekaman suara.");
+    return;
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    const nama = err && err.name;
+    if (nama === "NotAllowedError" || nama === "SecurityError") {
+      toast("Akses mikrofon ditolak. Izinkan lewat ikon di address bar, lalu coba lagi.");
+    } else if (nama === "NotFoundError") {
+      toast("Tidak ada mikrofon yang terdeteksi.");
+    } else {
+      toast("Mikrofon tidak bisa dibuka.");
+    }
+    return;
+  }
+
+  const mime = pickRecorderMime();
+  live = {
+    active: true,
+    cancelled: false,
+    stream,
+    mime,
+    chunks: [],
+    startedAt: Date.now(),
+    spoken: false,
+    silenceStart: 0,
+    ctx: null,
+    analyser: null,
+    raf: 0,
+    timer: 0,
+  };
+
+  try {
+    live.recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  } catch {
+    stream.getTracks().forEach((track) => track.stop());
+    toast("Perekaman suara gagal dimulai.");
+    return;
+  }
+
+  live.recorder.ondataavailable = (event) => {
+    if (event.data && event.data.size) live.chunks.push(event.data);
+  };
+  live.recorder.onstop = () => {
+    finishLive();
+  };
+
+  live.recorder.start();
+
+  recording = true;
+  syncComposer();
+  els.pickLive.textContent = "Berhenti";
+  els.pickLive.setAttribute("aria-pressed", "true");
+  els.level.hidden = false;
+  setStatus("mendengarkan", "searching");
+
+  live.timer = setInterval(() => {
+    if (!live || !live.active) return;
+    const detik = Math.floor((Date.now() - live.startedAt) / 1000);
+    els.attachNote.textContent = "mendengarkan " + detik + "s";
+    if (Date.now() - live.startedAt > LIVE_MAX_MS) stopLive(false);
+  }, 200);
+
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    live.ctx = new Ctx();
+    const source = live.ctx.createMediaStreamSource(stream);
+    live.analyser = live.ctx.createAnalyser();
+    live.analyser.fftSize = 512;
+    source.connect(live.analyser);
+    monitorLive();
+  } catch {
+    /* tanpa analiser rekaman tetap jalan; hanya level dan auto-berhenti yang mati */
+  }
+}
+
+function monitorLive() {
+  if (!live || !live.active || !live.analyser) return;
+
+  const buffer = new Uint8Array(live.analyser.fftSize);
+  live.analyser.getByteTimeDomainData(buffer);
+
+  let jumlah = 0;
+  for (let i = 0; i < buffer.length; i += 1) {
+    const nilai = (buffer[i] - 128) / 128;
+    jumlah += nilai * nilai;
+  }
+  const rms = Math.sqrt(jumlah / buffer.length);
+
+  const bar = els.level.firstElementChild;
+  if (bar) bar.style.width = Math.min(100, Math.round(rms * 400)) + "%";
+
+  const sekarang = Date.now();
+  if (rms > LIVE_RMS_THRESHOLD) {
+    live.spoken = true;
+    live.silenceStart = 0;
+  } else if (live.spoken) {
+    if (!live.silenceStart) {
+      live.silenceStart = sekarang;
+    } else if (sekarang - live.silenceStart > LIVE_SILENCE_MS) {
+      stopLive(false);
+      return;
+    }
+  }
+
+  live.raf = requestAnimationFrame(monitorLive);
+}
+
+function stopLive(cancel) {
+  if (!live || !live.active) return;
+
+  live.active = false;
+  live.cancelled = Boolean(cancel);
+  recording = false;
+
+  clearInterval(live.timer);
+  cancelAnimationFrame(live.raf);
+
+  try {
+    if (live.recorder && live.recorder.state !== "inactive") live.recorder.stop();
+  } catch {
+    /* diabaikan */
+  }
+  try {
+    live.stream.getTracks().forEach((track) => track.stop());
+  } catch {
+    /* diabaikan */
+  }
+  try {
+    if (live.ctx) live.ctx.close();
+  } catch {
+    /* diabaikan */
+  }
+  live.analyser = null;
+
+  els.pickLive.textContent = "Bicara";
+  els.pickLive.setAttribute("aria-pressed", "false");
+  els.level.hidden = true;
+  const bar = els.level.firstElementChild;
+  if (bar) bar.style.width = "0%";
+  syncComposer();
+}
+
+async function finishLive() {
+  const rekaman = live;
+  if (!rekaman) return;
+
+  const blob = new Blob(rekaman.chunks, { type: rekaman.mime || "audio/webm" });
+  const dibatalkan = rekaman.cancelled;
+  const terlaluPendek = blob.size < LIVE_MIN_BYTES;
+  rekaman.chunks = [];
+
+  els.attachNote.textContent = "";
+
+  if (dibatalkan || terlaluPendek) {
+    setStatus("siap", "idle");
+    return;
+  }
+
+  setBusy(true);
+  setStatus("menyalin suara", "searching");
+
+  try {
+    const raw = await readFileAsDataURL(blob);
+    const parts = dataUrlParts(raw);
+    const teks = String(
+      await postUpload("/api/transcribe", {
+        mime: blob.type || parts.mime,
+        data: parts.base64,
+        filename: "bicara.webm",
+      }) || ""
+    ).trim();
+
+    if (!teks) {
+      toast("Tidak ada suara yang terdengar. Coba bicara lebih dekat ke mikrofon.");
+      setStatus("siap", "idle");
+      return;
+    }
+
+    els.input.value = teks;
+    autoGrow();
+    setStatus("siap", "idle");
+    setBusy(false);
+    els.composer.requestSubmit();
+  } catch (err) {
+    if (err && err.status === 401) {
+      lockOut();
+      return;
+    }
+    toast(err.message || "Suara gagal ditranskripsi.");
+    setStatus("gagal", "error");
+  } finally {
+    setBusy(false);
+  }
 }
 
 let toastTimer;
@@ -553,6 +780,11 @@ els.gateForm.addEventListener("submit", (event) => {
 
 els.pickImage.addEventListener("click", () => els.fileImage.click());
 els.pickAudio.addEventListener("click", () => els.fileAudio.click());
+
+els.pickLive.addEventListener("click", () => {
+  if (recording) stopLive(false);
+  else startLive();
+});
 
 els.fileImage.addEventListener("change", (event) => {
   const file = event.target.files && event.target.files[0];

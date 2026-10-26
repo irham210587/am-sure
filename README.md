@@ -447,8 +447,9 @@ mengubah `DEEPSEEK_BASE_URL` dan `DEEPSEEK_MODEL` di `.env`.
 
 ## Unggah gambar dan suara
 
-Dua tombol di atas kolom tulis mempercepat pencarian tanpa mengetik. Keduanya hanya mengisi
-kolom tulis dengan teks yang masih bisa kamu sunting sebelum dikirim.
+Tiga tombol di atas kolom tulis mempercepat pencarian tanpa mengetik. Ketiganya hanya mengisi
+kolom tulis dengan teks yang masih bisa kamu sunting sebelum dikirim, kecuali tombol Bicara
+yang langsung menjalankan pencarian.
 
 **Gambar.** Pilih berkas, lalu model vision menuliskan satu kalimat deskripsi yang siap dipakai
 sebagai kata kunci pencarian. Gambar diperkecil di browser lebih dulu, jadi foto besar pun tetap
@@ -468,6 +469,20 @@ STT_MODEL=whisper-large-v3-turbo
 Groq punya paket gratis. Selama penyedianya memakai bentuk `/audio/transcriptions` yang sama,
 cukup ganti `STT_BASE_URL` dan `STT_MODEL`. Kalau kedua variabel itu kosong, tombol Suara
 menampilkan pesan bahwa fiturnya belum dikonfigurasi, bukan gagal diam-diam.
+
+**Bicara.** Tekan tombol ini, lalu ucapkan pertanyaanmu. Bot menyalakan mikrofon, menampilkan
+level suara dan durasi, lalu berhenti sendiri setelah kamu diam sekitar 1,6 detik. Hasil
+transkripsinya langsung dikirim sebagai pencarian, jadi jawaban mulai mengalir tanpa kamu
+menekan tombol kirim. Tekan Bicara sekali lagi untuk berhenti lebih cepat, dan perekaman
+otomatis berhenti di batas 60 detik.
+
+Browser akan meminta izin mikrofon sekali. Kalau izin ditolak, muncul pesan yang meminta kamu
+mengizinkannya lewat ikon di address bar. Perekaman hanya jalan di `localhost` atau alamat
+HTTPS, jadi di produksi tidak ada masalah.
+
+Groq tidak menyediakan transkripsi bertahap kata demi kata, jadi teks muncul setelah kamu
+selesai bicara, bukan saat sedang bicara. Yang tampil selama merekam adalah level suara dan
+hitungan detik, sebagai tanda mikrofon benar-benar menangkap suara.
 
 Batas berkas 3 MB untuk gambar maupun audio, kira-kira satu sampai dua menit rekaman. Angka itu
 dipilih karena Vercel menolak badan permintaan di atas 4,5 MB, dan base64 membengkak sekitar

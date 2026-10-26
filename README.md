@@ -328,6 +328,31 @@ curl -sSI https://nama-proyek.vercel.app/style.css | grep -iE 'x-vercel-cache|ca
 `x-vercel-cache: HIT` berarti berkas itu datang dari CDN. Kalau hasilnya kosong atau `MISS`,
 halaman tetap berfungsi, hanya saja setiap permintaan aset ikut membangunkan function.
 
+### Membangun ulang setelah mengubah variabel
+
+Variabel environment hanya terbaca saat build baru, jadi menambah atau mengubahnya tidak
+berpengaruh sampai kamu membangun ulang. Ada tiga cara, pilih yang paling nyaman.
+
+**Lewat dashboard.** Buka proyek di Vercel, tab **Deployments**, klik tombol `⋯` di kanan
+deployment paling atas, lalu pilih **Redeploy**. Setelah menyimpan variabel baru, Vercel
+kadang juga menampilkan tombol Redeploy langsung di halaman itu.
+
+**Lewat commit kosong.** Memicu build baru tanpa mengubah kode sama sekali:
+
+```bash
+git commit --allow-empty -m "Picu deploy ulang"
+git push origin main
+```
+
+**Lewat CLI.**
+
+```bash
+npx vercel --prod
+```
+
+Setelah build selesai, pastikan hasilnya di `/api/health`. Nilai `"stt_ready"` harus berubah
+dari `false` menjadi `true` setelah `STT_BASE_URL` dan `STT_API_KEY` terpasang di dashboard.
+
 ### Deploy lewat terminal, tanpa GitHub
 
 Vercel CLI tidak perlu dipasang permanen; `npx` cukup:

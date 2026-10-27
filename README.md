@@ -38,11 +38,118 @@ Empat hal yang membuat jawabannya akurat, bukan sekadar lancar:
 
 ---
 
+## Daftar layanan, kunci API, dan fitur
+
+Bagian ini menjawab pertanyaan "sebenarnya bot ini memakai apa saja". Semua nama variabel di
+bawah sama persis dengan yang dibaca kode, jadi bisa dipakai sebagai daftar periksa saat
+mengisi `.env` maupun dashboard Vercel.
+
+### A. Kunci penyedia teks dan gambar
+
+| Variabel | Layanan | Gunanya | Wajib? |
+|---|---|---|---|
+| `DEEPSEEK_API_KEY` | Tokenomix, DeepSeek, atau gateway lain | Menulis jawaban, menulis ulang pertanyaan lanjutan, dan membaca gambar | **Ya** |
+| `DEEPSEEK_BASE_URL` | alamat API penyedia | Ke server mana permintaan dikirim | Tidak, bawaan `https://api.deepseek.com` |
+| `DEEPSEEK_MODEL` | nama model | Model yang menulis jawaban | Tidak, bawaan `deepseek-chat` |
+| `VISION_MODEL` | nama model | Model yang mengubah gambar jadi kata kunci | Tidak, bawaan `deepseek-v4-flash-vision-exp` |
+
+Kunci gambar memakai kunci yang sama dengan teks, hanya modelnya berbeda. Jadi tombol Gambar
+tidak butuh pendaftaran baru. Satu catatan: kalau penyediamu tidak melayani model vision,
+tombol Gambar akan gagal, dan `VISION_MODEL` perlu diisi nama model yang memang ada di sana.
+
+### B. Kunci pencarian web
+
+| Variabel | Layanan | Gunanya | Wajib? |
+|---|---|---|---|
+| `TAVILY_API_KEY` | Tavily | Mencari lima halaman web untuk setiap pertanyaan | **Ya** |
+
+Tanpa kunci ini bot tidak punya bahan untuk dijawab, jadi setiap pertanyaan akan gagal dengan
+pesan kuota atau kunci.
+
+### C. Kunci suara (opsional)
+
+| Variabel | Layanan | Gunanya | Wajib? |
+|---|---|---|---|
+| `STT_BASE_URL` | Groq atau penyedia lain yang kompatibel OpenAI | Alamat layanan transkripsi | Tidak |
+| `STT_API_KEY` | Groq | Kunci transkripsi | Tidak |
+| `STT_MODEL` | nama model | Model transkripsi | Tidak, bawaan `whisper-large-v3-turbo` |
+
+Ketiganya hanya dipakai tombol Suara dan Bicara. Kalau kosong, kedua tombol itu memberi pesan
+bahwa fiturnya belum dikonfigurasi, dan sisa bot tetap jalan normal.
+
+### D. Layanan yang tidak butuh kunci sama sekali
+
+| Layanan | Gunanya | Dipakai oleh |
+|---|---|---|
+| Nominatim (OpenStreetMap) | Mengubah koordinat jadi nama daerah | Tombol Lokasi |
+| Photon (Komoot) | Mencari tempat dalam radius 2 km | Tombol Lokasi |
+| Google Fonts | Huruf Newsreader dan JetBrains Mono | Browser, langsung dari CDN |
+| Vercel | Hosting fungsi Python dan berkas statis | Produksi |
+
+Dua layanan peta itu terbuka tanpa pendaftaran. Karena itu fitur lokasi bisa dipakai tanpa
+menambah satu pun kunci.
+
+### E. Pengaturan yang bukan kunci
+
+| Variabel | Gunanya | Bawaan |
+|---|---|---|
+| `APP_ACCESS_KEY` | Kalau diisi, `/api/chat`, `/api/vision`, dan `/api/transcribe` wajib membawa header `X-Access-Key` | Kosong, artinya penjaga mati |
+| `GEO_USER_AGENT` | Identitas yang dikirim ke Nominatim, diminta aturan layanannya | `AmSure/1.0 (personal search bot)` |
+| `VERCEL_GIT_COMMIT_SHA` | Diisi Vercel sendiri, dibaca `/api/health` sebagai penanda build | Kosong di komputer sendiri |
+
+### F. Fitur dan apa yang dibutuhkannya
+
+| Fitur | Butuh | Kalau tidak tersedia |
+|---|---|---|
+| Jawaban naratif dari web | `DEEPSEEK_API_KEY`, `TAVILY_API_KEY` | Bot tidak bisa menjawab |
+| Riwayat tetap ada setelah refresh | `localStorage` di browser | Tidak ada layanan yang terlibat |
+| Jawaban mengalir token demi token | SSE dari FastAPI | Jawaban tetap muncul, hanya sekaligus di akhir |
+| Tanya lanjutan yang nyambung | Satu panggilan LLM tambahan | Dianggap pertanyaan baru |
+| Unggah gambar | `DEEPSEEK_API_KEY` + model vision | Tombol Gambar gagal |
+| Unggah audio | `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` | Tombol Suara menampilkan pesan |
+| Bicara langsung | Kunci suara + mikrofon browser | Tombol Bicara menampilkan pesan |
+| Tempat terdekat | Izin lokasi browser + Nominatim + Photon | Tombol Lokasi tidak bisa dipakai |
+| Halaman terkunci | `APP_ACCESS_KEY` | Siapa pun yang punya tautan bisa memakai kuotamu |
+
+### G. Endpoint dan penjaganya
+
+| Endpoint | Fungsi | Perlu kunci akses? |
+|---|---|---|
+| `GET /api/health` | Status konfigurasi, tanpa membocorkan nilai kunci | Tidak |
+| `POST /api/chat` | Tanya jawab, balasan SSE | Ya |
+| `POST /api/vision` | Gambar jadi kata kunci pencarian | Ya |
+| `POST /api/transcribe` | Audio jadi teks | Ya |
+| `GET /` dan berkas statis | Halaman antarmuka | Tidak |
+| `GET /api/docs` | Dokumentasi API otomatis dari FastAPI | Tidak |
+
+Penjaga hanya aktif kalau `APP_ACCESS_KEY` diisi. Di komputer sendiri biasanya dikosongkan,
+di Vercel sebaiknya diisi.
+
+### H. Apa yang dipakai per satu pertanyaan
+
+| Jenis pertanyaan | Panggilan berbayar |
+|---|---|
+| Pertanyaan pertama | 1 pencarian Tavily + 1 panggilan model |
+| Pertanyaan lanjutan | 1 pencarian Tavily + 2 panggilan model |
+| Pertanyaan tempat (Lokasi aktif) | Sama seperti di atas, ditambah 2 permintaan peta gratis |
+| Gambar | 1 panggilan model vision, lalu dihitung seperti pertanyaan biasa |
+| Suara atau Bicara | 1 transkripsi, lalu dihitung seperti pertanyaan biasa |
+
+Yang perlu diingat soal biaya: Tavily punya kuota gratis 1.000 pencarian per bulan, Groq punya
+paket gratis untuk transkripsi, dan layanan peta tidak berbayar. Yang benar-benar menagih per
+pemakaian hanya penyedia model teks.
+
+Kesimpulannya, untuk menjalankan bot ini cukup **dua kunci**: satu untuk model, satu untuk
+pencarian. Kunci ketiga hanya perlu kalau ingin memakai suara.
+
+---
+
 ## Instalasi
 
 Ikuti berurutan. Setiap langkah punya cara memeriksa bahwa langkah itu berhasil.
 
-Butuh: macOS atau Linux, koneksi internet, dan dua API key (diambil di Langkah 4).
+Butuh: macOS atau Linux, koneksi internet, dan dua API key wajib (diambil di Langkah 4).
+Kunci ketiga untuk suara sifatnya opsional.
 Tidak perlu MAMP, tidak perlu Node, tidak perlu Docker.
 
 ### Langkah 1 — Pastikan Python 3.10 atau lebih baru ada
@@ -95,6 +202,9 @@ Harus keluar `dependency OK`.
 > `xcode-select --install`, lalu ulangi Langkah 3.
 
 ### Langkah 4 — Ambil dua API key
+
+Daftar lengkap semua kunci, termasuk yang opsional, ada di bagian **Daftar layanan, kunci API,
+dan fitur** di atas. Di langkah ini kita ambil dua yang wajib dulu.
 
 Bot butuh dua layanan. Keduanya punya halaman pendaftaran gratis.
 

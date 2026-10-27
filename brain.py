@@ -293,11 +293,20 @@ def decode_upload(data_b64: str) -> bytes:
     return base64.b64decode(cleaned, validate=True)
 
 
-VISION_PROMPT = """Kamu melihat satu gambar yang dikirim pengguna.
+VISION_PROMPT = """Kamu melihat satu foto yang baru diambil pengguna dengan kamera.
 
-Tulis satu kalimat pendek dalam Bahasa Indonesia yang bisa dipakai sebagai kata kunci pencarian untuk mencari informasi tentang gambar ini.
+Tulis satu atau dua kalimat dalam Bahasa Indonesia yang dipakai sebagai kata kunci pencarian tentang objek di foto itu.
 
-Sebutkan objek utama, merek atau tulisan yang terbaca, dan konteksnya kalau jelas terlihat. Jangan mengarang yang tidak tampak. Jangan menulis alamat situs atau nama domain. Balas hanya kalimat itu, tanpa pembuka."""
+Cara menyusunnya:
+1. Sebut lebih dulu jenis objeknya dengan nama paling spesifik yang benar-benar diyakini.
+2. Kalau ada merek, model, atau tulisan yang terbaca jelas, tulis persis seperti yang terlihat.
+3. Baru sebut ciri yang membedakannya: warna, bahan, bentuk, atau tempat objek itu berada.
+
+Aturan:
+- Hanya sebut yang benar-benar tampak di foto. Kalau ragu, jangan menebak.
+- Jangan mengarang isi yang tidak terbaca, seperti harga, takaran, atau tanggal kedaluwarsa.
+- Jangan menulis alamat situs, nama domain, atau tanda baca daftar.
+- Balas hanya kalimat itu, tanpa pembuka dan tanpa penjelasan."""
 
 
 async def describe_image(mime: str, data_b64: str) -> str:
@@ -316,8 +325,8 @@ async def describe_image(mime: str, data_b64: str) -> str:
                 ],
             }
         ],
-        temperature=0.2,
-        max_tokens=200,
+        temperature=0.1,
+        max_tokens=300,
     )
     return sanitize_answer((resp.choices[0].message.content or "").strip())
 

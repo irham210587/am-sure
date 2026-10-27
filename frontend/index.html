@@ -54,6 +54,7 @@
   <form class="composer" id="composer" autocomplete="off">
     <div class="attach">
       <button type="button" class="chip" id="pick-image">Gambar</button>
+      <button type="button" class="chip" id="pick-camera">Kamera</button>
       <button type="button" class="chip" id="pick-audio">Suara</button>
       <button type="button" class="chip" id="pick-live" aria-pressed="false">Bicara</button>
       <button type="button" class="chip" id="pick-place" aria-pressed="false"
@@ -74,6 +75,18 @@
       <button class="send" id="send" type="submit">Cari</button>
     </div>
   </form>
+
+  <div class="camera" id="camera" hidden role="dialog" aria-modal="true" aria-label="Kamera">
+    <video class="camera-view" id="camera-video" playsinline muted autoplay></video>
+    <div class="camera-bar">
+      <p class="camera-note" id="camera-note" role="status">menyiapkan kamera…</p>
+      <div class="camera-row">
+        <button type="button" class="camera-close" id="camera-close">Tutup</button>
+        <button type="button" class="camera-shoot" id="camera-shoot" aria-label="Ambil gambar" disabled></button>
+        <span class="camera-spacer" aria-hidden="true"></span>
+      </div>
+    </div>
+  </div>
 
   <div class="toast" id="toast" role="status" hidden></div>
 

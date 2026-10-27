@@ -106,6 +106,7 @@ menambah satu pun kunci.
 | Jawaban mengalir token demi token | SSE dari FastAPI | Jawaban tetap muncul, hanya sekaligus di akhir |
 | Tanya lanjutan yang nyambung | Satu panggilan LLM tambahan | Dianggap pertanyaan baru |
 | Unggah gambar | `DEEPSEEK_API_KEY` + model vision | Tombol Gambar gagal |
+| Kamera langsung | Kunci gambar + kamera browser | Tombol Kamera menampilkan pesan |
 | Unggah audio | `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` | Tombol Suara menampilkan pesan |
 | Bicara langsung | Kunci suara + mikrofon browser | Tombol Bicara menampilkan pesan |
 | Tempat terdekat | Izin lokasi browser + Nominatim + Photon | Tombol Lokasi tidak bisa dipakai |
@@ -117,7 +118,7 @@ menambah satu pun kunci.
 |---|---|---|
 | `GET /api/health` | Status konfigurasi, tanpa membocorkan nilai kunci | Tidak |
 | `POST /api/chat` | Tanya jawab, balasan SSE | Ya |
-| `POST /api/vision` | Gambar jadi kata kunci pencarian | Ya |
+| `POST /api/vision` | Gambar atau bingkai kamera jadi kata kunci pencarian | Ya |
 | `POST /api/transcribe` | Audio jadi teks | Ya |
 | `GET /` dan berkas statis | Halaman antarmuka | Tidak |
 | `GET /api/docs` | Dokumentasi API otomatis dari FastAPI | Tidak |
@@ -563,15 +564,27 @@ mengubah `DEEPSEEK_BASE_URL` dan `DEEPSEEK_MODEL` di `.env`.
 
 ## Unggah gambar dan suara
 
-Empat tombol di atas kolom tulis mempercepat pencarian tanpa mengetik. Gambar dan Suara mengisi
+Lima tombol di atas kolom tulis mempercepat pencarian tanpa mengetik. Gambar dan Suara mengisi
 kolom tulis dengan teks yang masih bisa kamu sunting sebelum dikirim. Bicara langsung
-menjalankan pencarian. Lokasi menyalakan pembacaan posisi untuk pertanyaan tentang tempat
-terdekat.
+menjalankan pencarian. Kamera membaca objek lalu langsung mencarikannya. Lokasi menyalakan
+pembacaan posisi untuk pertanyaan tentang tempat terdekat.
 
 **Gambar.** Pilih berkas, lalu model vision menuliskan satu kalimat deskripsi yang siap dipakai
 sebagai kata kunci pencarian. Gambar diperkecil di browser lebih dulu, jadi foto besar pun tetap
 muat di bawah batas badan permintaan Vercel. Model bawaannya `deepseek-v4-flash-vision-exp` dari
 gateway yang sama dengan model teks, dan bisa diganti lewat `VISION_MODEL`.
+
+**Kamera.** Tekan tombol ini untuk membuka kamera belakang secara langsung. Arahkan ke objek,
+lalu tekan tombol bulat di bawah layar. Bingkai yang tertangkap dikirim ke model vision, dan
+jawabannya langsung dipakai sebagai pertanyaan, jadi hasil pencariannya muncul tanpa kamu
+mengetik apa pun. Tombol Tutup atau tombol Escape menghentikan kamera, dan kamera juga mati
+sendiri saat tab berpindah ke latar belakang. Bingkainya diambil pada sisi terpanjang 1600 piksel
+supaya tulisan kecil seperti merek atau label masih terbaca.
+
+Model diminta menyebut jenis objek lebih dulu, lalu menulis merek atau tulisan yang benar-benar
+terlihat, baru ciri yang membedakannya. Kalau tulisannya tidak terbaca, model dilarang menebak.
+Kamera hanya jalan di `localhost` atau alamat HTTPS; kalau izinnya ditolak, muncul pesan yang
+meminta kamu mengizinkannya lewat ikon di address bar.
 
 **Suara.** Pilih berkas audio, lalu isinya diubah menjadi teks. Gateway yang dipakai sekarang
 tidak melayani audio, jadi bagian ini butuh penyedia lain yang formatnya kompatibel dengan

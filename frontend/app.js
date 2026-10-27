@@ -24,6 +24,12 @@ const els = {
   pickAudio: document.getElementById("pick-audio"),
   pickLive: document.getElementById("pick-live"),
   pickPlace: document.getElementById("pick-place"),
+  pickCamera: document.getElementById("pick-camera"),
+  camera: document.getElementById("camera"),
+  cameraVideo: document.getElementById("camera-video"),
+  cameraShoot: document.getElementById("camera-shoot"),
+  cameraClose: document.getElementById("camera-close"),
+  cameraNote: document.getElementById("camera-note"),
   fileImage: document.getElementById("file-image"),
   fileAudio: document.getElementById("file-audio"),
   level: document.getElementById("level"),
@@ -107,6 +113,7 @@ function syncComposer() {
   const blocked = busy || gateOpen;
   els.send.disabled = blocked || recording;
   els.pickImage.disabled = blocked || recording;
+  els.pickCamera.disabled = blocked || recording;
   els.pickAudio.disabled = blocked || recording;
   els.pickLive.disabled = blocked;
   els.pickPlace.disabled = blocked;
@@ -516,6 +523,194 @@ async function finishLive() {
   }
 }
 
+/* ---------------- kamera langsung ---------------- */
+
+const CAMERA_MAX_EDGE = 1600;
+const CAMERA_JPEG_QUALITY = 0.9;
+const CAMERA_READY_TIMEOUT_MS = 12000;
+
+let camera = null;
+
+function setCameraNote(text) {
+  els.cameraNote.textContent = text;
+}
+
+function cameraSupported() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+function waitForVideo(video) {
+  if (video.readyState >= 2 && video.videoWidth) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const selesai = (gagal) => {
+      clearTimeout(timer);
+      video.removeEventListener("loadedmetadata", cek);
+      video.removeEventListener("canplay", cek);
+      if (gagal) reject(new Error("Kamera tidak mengirim gambar."));
+      else resolve();
+    };
+    const cek = () => {
+      if (video.videoWidth) selesai(false);
+    };
+    const timer = setTimeout(() => selesai(true), CAMERA_READY_TIMEOUT_MS);
+    video.addEventListener("loadedmetadata", cek);
+    video.addEventListener("canplay", cek);
+  });
+}
+
+async function openCamera() {
+  if (busy || gateOpen || camera) return;
+
+  if (!cameraSupported()) {
+    toast("Browser ini tidak mendukung kamera langsung. Pakai tombol Gambar.");
+    return;
+  }
+  if (!window.isSecureContext) {
+    toast("Kamera hanya bisa dibuka lewat HTTPS atau localhost.");
+    return;
+  }
+
+  camera = { stream: null };
+  els.camera.hidden = false;
+  document.body.classList.add("camera-open");
+  els.cameraShoot.disabled = true;
+  els.cameraClose.disabled = false;
+  setCameraNote("menyiapkan kamera…");
+  els.cameraClose.focus();
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1440 },
+      },
+      audio: false,
+    });
+  } catch (err) {
+    closeCamera(true);
+    const nama = err && err.name;
+    if (nama === "NotAllowedError" || nama === "SecurityError") {
+      toast("Akses kamera ditolak. Izinkan lewat ikon di address bar, lalu coba lagi.");
+    } else if (nama === "NotFoundError" || nama === "OverconstrainedError") {
+      toast("Tidak ada kamera yang terdeteksi.");
+    } else {
+      toast("Kamera tidak bisa dibuka.");
+    }
+    return;
+  }
+
+  if (!camera) {
+    stream.getTracks().forEach((track) => track.stop());
+    return;
+  }
+
+  camera.stream = stream;
+  els.cameraVideo.srcObject = stream;
+
+  try {
+    await els.cameraVideo.play();
+    await waitForVideo(els.cameraVideo);
+  } catch {
+    closeCamera(true);
+    toast("Kamera tidak mengirim gambar. Coba tutup lalu buka lagi.");
+    return;
+  }
+
+  if (!camera) return;
+  setCameraNote("arahkan ke objek, lalu tekan tombol");
+  els.cameraShoot.disabled = false;
+}
+
+function closeCamera(silent) {
+  const aktif = camera;
+  camera = null;
+
+  if (aktif && aktif.stream) {
+    aktif.stream.getTracks().forEach((track) => track.stop());
+  }
+
+  els.cameraVideo.srcObject = null;
+  els.camera.hidden = true;
+  document.body.classList.remove("camera-open");
+  els.cameraShoot.disabled = true;
+  els.cameraClose.disabled = false;
+
+  if (!silent && !gateOpen) els.input.focus();
+}
+
+function captureFrame() {
+  const video = els.cameraVideo;
+  const lebar = video.videoWidth;
+  const tinggi = video.videoHeight;
+  if (!lebar || !tinggi) throw new Error("Kamera belum siap.");
+
+  const skala = Math.min(1, CAMERA_MAX_EDGE / Math.max(lebar, tinggi));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(lebar * skala));
+  canvas.height = Math.max(1, Math.round(tinggi * skala));
+  canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  let kualitas = CAMERA_JPEG_QUALITY;
+  let out = dataUrlParts(canvas.toDataURL("image/jpeg", kualitas));
+  while (base64Bytes(out.base64) > MAX_UPLOAD_BYTES && kualitas > 0.4) {
+    kualitas -= 0.15;
+    out = dataUrlParts(canvas.toDataURL("image/jpeg", kualitas));
+  }
+  if (base64Bytes(out.base64) > MAX_UPLOAD_BYTES) {
+    throw new Error("Gambar terlalu besar. Coba lagi dari sedikit lebih jauh.");
+  }
+  return out;
+}
+
+async function shootCamera() {
+  if (!camera) return;
+
+  els.cameraShoot.disabled = true;
+  els.cameraClose.disabled = true;
+  setCameraNote("membaca objek…");
+  setBusy(true);
+  setStatus("membaca objek", "searching");
+
+  try {
+    const parts = captureFrame();
+    const teks = String(
+      (await postUpload("/api/vision", {
+        mime: parts.mime,
+        data: parts.base64,
+        filename: "kamera.jpg",
+      })) || ""
+    ).trim();
+
+    closeCamera(true);
+
+    if (!teks) {
+      toast("Objek belum bisa dikenali. Coba dekatkan kamera lalu ambil lagi.");
+      setStatus("siap", "idle");
+      setBusy(false);
+      els.input.focus();
+      return;
+    }
+
+    els.input.value = teks;
+    autoGrow();
+    setStatus("siap", "idle");
+    setBusy(false);
+    els.composer.requestSubmit();
+  } catch (err) {
+    closeCamera(true);
+    setBusy(false);
+    if (err && err.status === 401) {
+      lockOut();
+      return;
+    }
+    toast(err.message || "Gambar gagal dibaca.");
+    setStatus("gagal", "error");
+  }
+}
+
 /* ---------------- lokasi: untuk pertanyaan tempat terdekat ---------------- */
 
 const GEO_MAX_AGE_MS = 5 * 60 * 1000;
@@ -873,6 +1068,9 @@ els.gateForm.addEventListener("submit", (event) => {
 });
 
 els.pickImage.addEventListener("click", () => els.fileImage.click());
+els.pickCamera.addEventListener("click", openCamera);
+els.cameraShoot.addEventListener("click", shootCamera);
+els.cameraClose.addEventListener("click", () => closeCamera(false));
 els.pickAudio.addEventListener("click", () => els.fileAudio.click());
 
 els.pickLive.addEventListener("click", () => {
@@ -892,6 +1090,17 @@ els.fileAudio.addEventListener("change", (event) => {
   const file = event.target.files && event.target.files[0];
   event.target.value = "";
   handleAudioFile(file);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && camera) {
+    event.preventDefault();
+    closeCamera(false);
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && camera) closeCamera(true);
 });
 
 renderAll();

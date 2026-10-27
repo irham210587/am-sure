@@ -52,10 +52,19 @@ class Message(BaseModel):
     content: str
 
 
+class Location(BaseModel):
+    """Koordinat dari browser. Hanya dipakai untuk pertanyaan tempat terdekat."""
+
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    accuracy: Optional[float] = Field(default=None, ge=0, le=100000)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     history: list[Message] = Field(default_factory=list)
     days: Optional[int] = None
+    location: Optional[Location] = None
 
 
 def sse(event: str, data: dict) -> str:
@@ -90,10 +99,13 @@ async def health() -> dict:
 @app.post("/api/chat", dependencies=[Depends(require_access)])
 async def chat(body: ChatRequest) -> StreamingResponse:
     history = [m.model_dump() for m in body.history]
+    location = body.location.model_dump() if body.location else None
 
     async def generate():
         try:
-            async for item in brain.answer_stream(body.message, history, days=body.days):
+            async for item in brain.answer_stream(
+                body.message, history, days=body.days, location=location
+            ):
                 yield sse(item["event"], item["data"])
         except Exception as exc:  # jaring terakhir: stream tidak boleh mati diam-diam
             yield sse("error", {"message": f"Kesalahan tak terduga: {exc}"})

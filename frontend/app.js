@@ -23,6 +23,7 @@ const els = {
   pickImage: document.getElementById("pick-image"),
   pickAudio: document.getElementById("pick-audio"),
   pickLive: document.getElementById("pick-live"),
+  pickPlace: document.getElementById("pick-place"),
   fileImage: document.getElementById("file-image"),
   fileAudio: document.getElementById("file-audio"),
   level: document.getElementById("level"),
@@ -35,6 +36,10 @@ let busy = false;
 let gateOpen = false;
 let recording = false;
 let sttReady = false;
+
+/* Posisi hanya hidup di memori tab ini. Tidak ditulis ke localStorage,
+   jadi hilang sendiri saat halaman dimuat ulang. */
+let here = null;
 
 /* ---------------- penyimpanan ---------------- */
 
@@ -104,6 +109,7 @@ function syncComposer() {
   els.pickImage.disabled = blocked || recording;
   els.pickAudio.disabled = blocked || recording;
   els.pickLive.disabled = blocked;
+  els.pickPlace.disabled = blocked;
 }
 
 function setBusy(value) {
@@ -510,6 +516,87 @@ async function finishLive() {
   }
 }
 
+/* ---------------- lokasi: untuk pertanyaan tempat terdekat ---------------- */
+
+const GEO_MAX_AGE_MS = 5 * 60 * 1000;
+
+/* Kata yang menandakan pertanyaan tentang tempat, dipakai hanya untuk
+   mengingatkan pengguna kalau tombol Lokasi belum dinyalakan. */
+const LOCAL_HINT_RE =
+  /(terdekat|dekat sini|di sekitar|sekitar sini|di dekat|sekitaran|nearby|posisi saya|lokasi saya)/i;
+const LOCAL_WORD_RE =
+  /(warung|minimarket|indomaret|alfamart|atm|apotek|apotik|spbu|pom bensin|restoran|rumah makan|tempat makan|rumah sakit|klinik|puskesmas|bengkel|laundry|masjid|musholla|hotel|penginapan|parkir)/i;
+
+function looksLocal(text) {
+  const value = String(text || "");
+  return LOCAL_HINT_RE.test(value) || LOCAL_WORD_RE.test(value);
+}
+
+function placeSupported() {
+  return !!(navigator.geolocation && window.isSecureContext);
+}
+
+function updatePlaceChip() {
+  els.pickPlace.textContent = here ? "Lokasi aktif" : "Lokasi";
+  els.pickPlace.setAttribute("aria-pressed", here ? "true" : "false");
+  els.pickPlace.title = here
+    ? "Posisi dipakai untuk pertanyaan tempat terdekat. Klik untuk mematikan."
+    : "Pakai posisi sekarang untuk mencari tempat terdekat.";
+}
+
+function disablePlace(silent) {
+  here = null;
+  updatePlaceChip();
+  if (!silent) toast("Lokasi dimatikan. Posisi tidak lagi dikirim.");
+}
+
+async function enablePlace() {
+  if (!placeSupported()) {
+    toast("Browser ini tidak mendukung lokasi, atau halaman tidak dibuka lewat HTTPS.");
+    return;
+  }
+
+  setStatus("mencari posisi", "searching");
+
+  let pos;
+  try {
+    pos = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: false,
+        timeout: 12000,
+        maximumAge: GEO_MAX_AGE_MS,
+      });
+    });
+  } catch (err) {
+    const kode = err && err.code;
+    if (kode === 1) {
+      toast("Izin lokasi ditolak. Izinkan lewat ikon di address bar, lalu coba lagi.");
+    } else if (kode === 3) {
+      toast("Posisi tidak ditemukan dalam 12 detik. Coba lagi di tempat yang lebih terbuka.");
+    } else {
+      toast("Lokasi tidak bisa dibaca browser.");
+    }
+    setStatus("siap", "idle");
+    return;
+  }
+
+  const akurasi = Number(pos.coords.accuracy);
+  here = {
+    lat: Number(pos.coords.latitude.toFixed(5)),
+    lon: Number(pos.coords.longitude.toFixed(5)),
+    accuracy: Number.isFinite(akurasi) ? Math.round(akurasi) : null,
+  };
+
+  updatePlaceChip();
+  setStatus("siap", "idle");
+  toast("Lokasi aktif. Hanya dipakai untuk pertanyaan tempat terdekat.");
+}
+
+function togglePlace() {
+  if (here) disablePlace(false);
+  else enablePlace();
+}
+
 let toastTimer;
 function toast(message) {
   els.toast.textContent = message;
@@ -571,11 +658,11 @@ function parseFrame(frame) {
   return { event, data };
 }
 
-async function streamChat({ message, history, days, onEvent }) {
+async function streamChat({ message, history, days, location, onEvent }) {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: requestHeaders(),
-    body: JSON.stringify({ message, history, days }),
+    body: JSON.stringify({ message, history, days, location }),
   });
 
   if (res.status === 401) {
@@ -645,11 +732,18 @@ async function ask(raw) {
   setStatus("menelusuri", "searching");
   scrollToEnd(true);
 
+  if (!here && looksLocal(message)) {
+    toast("Aktifkan tombol Lokasi supaya jawabannya memakai posisi kamu sekarang.");
+  }
+
   try {
     await streamChat({
       message,
       history: prior,
       days: els.recent.checked ? 7 : null,
+      location: here
+        ? { lat: here.lat, lon: here.lon, accuracy: here.accuracy }
+        : null,
       onEvent: ({ event, data }) => {
         if (event === "token") {
           if (!botTurn.content) setStatus("menjawab", "answering");
@@ -786,6 +880,8 @@ els.pickLive.addEventListener("click", () => {
   else startLive();
 });
 
+els.pickPlace.addEventListener("click", togglePlace);
+
 els.fileImage.addEventListener("change", (event) => {
   const file = event.target.files && event.target.files[0];
   event.target.value = "";
@@ -799,5 +895,6 @@ els.fileAudio.addEventListener("change", (event) => {
 });
 
 renderAll();
+updatePlaceChip();
 checkHealth();
 els.input.focus();

@@ -20,6 +20,8 @@ import httpx
 from openai import AsyncOpenAI
 from tavily import AsyncTavilyClient
 
+import geo
+
 MAX_HISTORY = 6
 MAX_RESULTS = 5
 SNIPPET_LIMIT = 1400
@@ -102,7 +104,7 @@ SYSTEM_PROMPT = """Kamu asisten yang menjawab dengan tenang, runtut, dan langsun
 
 Tanggal hari ini: {today}.
 
-Di bawah ada bahan yang baru dikumpulkan dari web. Bahan itu satu-satunya dasar jawabanmu. Pengguna tidak melihat bahan itu dan tidak tahu ada pencarian, jadi jangan pernah merujuknya.
+Di bawah ada bahan dari web dan, kalau tersedia, daftar tempat di sekitar pengguna. Keduanya satu-satunya dasar jawabanmu. Pengguna tidak melihat bahan itu dan tidak tahu ada pencarian, jadi jangan pernah merujuknya.
 
 Cara menyusun jawaban:
 1. Kalimat pertama langsung menjawab inti pertanyaan. Sisanya penjelasan yang mengalir.
@@ -111,10 +113,13 @@ Cara menyusun jawaban:
 4. Dilarang menulis frasa seperti "menurut sumber", "berdasarkan pencarian", "dari hasil pencarian", "sumber:", atau menyebut nomor sumber.
 5. Dilarang mengarang angka, tanggal, nama, atau peristiwa. Kalau bahan tidak memuat jawabannya, jawab dengan satu atau dua kalimat sopan bahwa informasi itu belum tersedia, tanpa mengutip bahan mentah.
 6. Kalau bahan saling bertentangan, sebutkan bahwa ada keterangan yang berbeda, tanpa menyebut asalnya.
-7. Bahasa Indonesia. Dua sampai empat paragraf pendek, kecuali pertanyaannya memang menuntut lebih.
+7. Kalau pertanyaannya menanyakan tempat terdekat, dahulukan tempat dari daftar di bawah dan sebutkan perkiraan jaraknya di dalam kalimat. Jangan menyebut koordinat, dan jangan menyebut tempat yang tidak ada di daftar maupun di bahan.
+8. Bahasa Indonesia. Dua sampai empat paragraf pendek, kecuali pertanyaannya memang menuntut lebih.
 
 Bahan:
-{context}"""
+{context}
+
+{places}"""
 
 
 NOT_FOUND_TEXT = (
@@ -128,10 +133,15 @@ def build_messages(
     history: list[dict],
     sources: list[Source],
     today: Optional[str] = None,
+    places: str = "",
 ) -> list[dict]:
     """Rakit pesan final ke LLM: system berisi sumber, lalu riwayat, lalu pertanyaan."""
     today = today or date.today().isoformat()
-    system = SYSTEM_PROMPT.format(today=today, context=build_context(sources))
+    system = SYSTEM_PROMPT.format(
+        today=today,
+        context=build_context(sources),
+        places=places,
+    )
 
     messages: list[dict] = [{"role": "system", "content": system}]
     for item in history[-MAX_HISTORY:]:
@@ -415,11 +425,16 @@ async def answer_stream(
     message: str,
     history: Optional[list[dict]] = None,
     days: Optional[int] = None,
+    location: Optional[dict] = None,
 ) -> AsyncIterator[dict]:
     """Hasilkan kejadian: token* -> final -> done.
 
     Pencarian berjalan di balik layar. Klien hanya menerima teks jawaban,
     tanpa daftar sumber dan tanpa jejak proses pencarian.
+
+    Kalau klien mengirim koordinat dan pertanyaannya menyangkut tempat, posisi
+    itu dipakai untuk mencari tempat terdekat. Selain itu lokasi diabaikan,
+    jadi pencarian biasa tidak melambat.
     """
     history = history or []
     message = (message or "").strip()
@@ -434,13 +449,25 @@ async def answer_stream(
         except Exception:
             query = message
 
+    places_block = ""
+    lat, lon = geo.valid_coords(location)
+    if lat is not None and lon is not None and geo.is_local_question(query):
+        try:
+            area, places = await geo.local_context(lat, lon, query)
+            accuracy = location.get("accuracy") if isinstance(location, dict) else None
+            places_block = geo.format_places_block(area, places, accuracy)
+            if area:
+                query = f"{query} {area}"
+        except Exception:
+            places_block = ""
+
     try:
         sources = await web_search(query, days=days)
     except Exception as exc:
         yield {"event": "error", "data": {"message": _search_error_message(exc)}}
         return
 
-    if not sources:
+    if not sources and not places_block:
         yield {"event": "token", "data": {"text": NOT_FOUND_TEXT}}
         yield {"event": "done", "data": {}}
         return
@@ -449,7 +476,7 @@ async def answer_stream(
     try:
         stream = await llm().chat.completions.create(
             model=model_name(),
-            messages=build_messages(message, history, sources),
+            messages=build_messages(message, history, sources, places=places_block),
             stream=True,
             temperature=0.3,
             max_tokens=1200,

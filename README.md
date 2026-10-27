@@ -14,6 +14,9 @@ menyimpan data. Satu-satunya yang menyimpan riwayat adalah browser kamu, di `loc
 ```
 Browser  ──POST /api/chat {pertanyaan, riwayat}──▶  FastAPI
                                                       │
+                                       0. kalau pertanyaan menyebut tempat dan tombol
+                                          Lokasi aktif: koordinat jadi nama daerah,
+                                          lalu tempat dalam radius 2 km dicari
                                        1. tulis ulang pertanyaan jadi query mandiri
                                        2. Tavily: cari 5 halaman web
                                        3. susun hasilnya jadi bahan internal untuk model
@@ -399,6 +402,7 @@ Untuk menghentikan server: `Ctrl+C` di terminal tempat `uvicorn` berjalan.
 .
 ├── main.py               Endpoint HTTP dan streaming SSE
 ├── brain.py              Inti RAG: rewrite, search, prompt, saring keluaran
+├── geo.py                Tempat sekitar: koordinat, jarak, OpenStreetMap
 ├── check_provider.py     Skrip uji koneksi ke penyedia LLM
 ├── frontend/
 │   ├── index.html
@@ -439,6 +443,8 @@ perakitan prompt. Tidak memanggil API, jadi tidak butuh kunci dan tidak memakan 
 | Batas riwayat di browser | `MAX_STORED_TURNS` di `frontend/app.js` |
 | Warna dan tipografi | token di bagian atas `frontend/style.css` |
 | Model bahasa | `DEEPSEEK_MODEL` di `.env` |
+| Radius pencarian tempat terdekat | `RADIUS_METERS` di `geo.py` (bawaan 2000 meter) |
+| Jenis tempat yang dikenali | `CATEGORIES` di `geo.py` |
 
 Karena klien LLM memakai format API yang sama dengan OpenAI, mengganti penyedia cukup dengan
 mengubah `DEEPSEEK_BASE_URL` dan `DEEPSEEK_MODEL` di `.env`.
@@ -447,9 +453,10 @@ mengubah `DEEPSEEK_BASE_URL` dan `DEEPSEEK_MODEL` di `.env`.
 
 ## Unggah gambar dan suara
 
-Tiga tombol di atas kolom tulis mempercepat pencarian tanpa mengetik. Ketiganya hanya mengisi
-kolom tulis dengan teks yang masih bisa kamu sunting sebelum dikirim, kecuali tombol Bicara
-yang langsung menjalankan pencarian.
+Empat tombol di atas kolom tulis mempercepat pencarian tanpa mengetik. Gambar dan Suara mengisi
+kolom tulis dengan teks yang masih bisa kamu sunting sebelum dikirim. Bicara langsung
+menjalankan pencarian. Lokasi menyalakan pembacaan posisi untuk pertanyaan tentang tempat
+terdekat.
 
 **Gambar.** Pilih berkas, lalu model vision menuliskan satu kalimat deskripsi yang siap dipakai
 sebagai kata kunci pencarian. Gambar diperkecil di browser lebih dulu, jadi foto besar pun tetap
@@ -483,6 +490,34 @@ HTTPS, jadi di produksi tidak ada masalah.
 Groq tidak menyediakan transkripsi bertahap kata demi kata, jadi teks muncul setelah kamu
 selesai bicara, bukan saat sedang bicara. Yang tampil selama merekam adalah level suara dan
 hitungan detik, sebagai tanda mikrofon benar-benar menangkap suara.
+
+**Lokasi.** Tekan tombol ini sekali, izinkan browser membaca posisi, dan tombolnya berubah jadi
+hijau dengan tulisan "Lokasi aktif". Setelah itu pertanyaan seperti "ATM terdekat" atau
+"warung dekat sini" dijawab dengan tempat yang benar-benar ada di sekitar posisimu, lengkap
+dengan perkiraan jaraknya.
+
+Yang terjadi di balik layar: koordinat diubah dulu menjadi nama daerah, lalu tempat dicari
+dalam radius 2 km dan diurutkan menurut jarak garis lurus. Hasilnya digabung dengan pencarian
+web biasa, dan model menulisnya sebagai paragraf seperti biasa. Kalau pertanyaannya bukan soal
+tempat, lokasi sama sekali tidak dipakai, jadi pencarian umum tidak melambat. Kalau layanan
+peta sedang tidak bisa dihubungi, jawaban tetap keluar memakai pencarian web saja.
+
+Tidak ada API key tambahan untuk fitur ini. Kedua layanan petanya, Nominatim dan Photon,
+memakai data OpenStreetMap dan terbuka tanpa pendaftaran. Yang perlu diketahui soal privasi:
+koordinatmu dikirim ke layanan peta itu, bukan ke Tavily dan bukan ke model bahasa. Yang masuk
+ke model hanya nama daerah dan daftar tempat beserta jaraknya. Posisi juga hanya hidup di
+memori tab, tidak ditulis ke `localStorage`, dan hilang begitu halaman dimuat ulang atau
+tombolnya dimatikan.
+
+Browser hanya mau membagi posisi di `localhost` atau alamat HTTPS, jadi di produksi tidak ada
+masalah. Kalau izinnya ditolak, muncul pesan yang meminta kamu mengizinkannya lewat ikon di
+address bar.
+
+Cakupan datanya bergantung pada OpenStreetMap. ATM, apotek, dan minimarket biasanya lengkap di
+kota besar. Warung kecil sering belum dipetakan, jadi kalau hasilnya kosong bukan berarti di
+sana tidak ada warung, hanya datanya belum ada. Untuk jawaban yang lebih rapat, layanan peta
+berbayar seperti Google Places bisa dipakai dengan mengganti isi `geo.py`; struktur pemanggilannya
+sengaja dipisah di modul itu supaya penggantian tidak menyentuh `brain.py`.
 
 Batas berkas 3 MB untuk gambar maupun audio, kira-kira satu sampai dua menit rekaman. Angka itu
 dipilih karena Vercel menolak badan permintaan di atas 4,5 MB, dan base64 membengkak sekitar
